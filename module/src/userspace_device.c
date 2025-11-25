@@ -5,6 +5,8 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 //#include <linux/sched.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include "userspace_device.h"
 
@@ -12,7 +14,7 @@
 #define BUF_SIZE 256
 
 //static ssize_t recv_password(struct file *, const char __user *, size_t, loff_t *);
-static ssize_t write_response(struct file *, char __user *, size_t, loff_t *);
+static ssize_t write_response(struct file *, char * __user, size_t, loff_t *);
 static long device_ioctl(struct file *, unsigned int, unsigned long);
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);

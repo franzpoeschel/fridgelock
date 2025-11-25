@@ -1,8 +1,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
-#include <stropts.h>
+// #include <stropts.h>
 #include <mntent.h>
 #include <errno.h>
 
@@ -52,6 +53,7 @@ int run(char* prg, char** args) {
 int main(int argc, char *argv[])
 {
 	if(redirect_stdout_to_kernel()) {
+		LOG("Failed redirecting stdout to kernel\n");
 		return -1;
 	}	
 	
@@ -67,14 +69,22 @@ int main(int argc, char *argv[])
 		length += strlen(argv[i]) + 1;
 	}
 	char *buf = malloc(length + sizeof(unsigned short));
+	// könnte korrekter sein als der typecast unten
+	// memcpy(buf, &length, sizeof(unsigned short));
 	*(unsigned short*) buf = length;
 
-	int offset = sizeof(length);
+	int offset = sizeof(unsigned short);
 	for(int i=1;i<argc;i++) {
 		strcpy(buf+offset, argv[i]);
 		offset += strlen(argv[i]) + 1;
 	}
 	
+ // Um diesen Aufruf zu benutzen, wird ein offener Dateideskriptor benötigt. Der Aufruf  von
+ // open(2)  hat  oft  unerwünschte Nebeneffekte, die unter Linux durch Angabe des Schalters
+ // O_NONBLOCK vermieden werden können.
+ //
+ // wahhh? 1337? vermutlich selber definiert?
+ // -> jo, siehe module/src/userspace_device.c:129
 	ioctl(dev, 1337, buf);
 
 	ioctl(dev, 0);
