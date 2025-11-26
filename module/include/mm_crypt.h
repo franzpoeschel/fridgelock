@@ -168,4 +168,7 @@ void print_vm_area_struct(struct task_struct *task, struct vm_area_struct *vma);
 void print_pte(struct task_struct *task, pte_t *pte, struct vm_area_struct *vma, int num_iter);
 
 #endif
+
+enc_process_t* freezer_find_segments(struct task_struct *task, char mem_sections);
+
 #endif /* _LINUX_MM_CRYPT_H  */
