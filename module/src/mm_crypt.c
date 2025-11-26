@@ -377,12 +377,12 @@ struct pgcrypt_result {
 	long long unsigned int *iv_string;
 };
 
-void pgcrypt_complete(struct crypto_async_request *req, int err)
+void *pgcrypt_complete(struct crypto_async_request *req, int err)
 {
 	struct pgcrypt_result *res = req->data;
 	if (err == -EINPROGRESS) {
 		complete(res->async_barrier);
-		return;
+		return NULL;
 	}
 	else if (err != 0) {
 		printk("__refrigerator [%s] PID: (THIS IS THE WRONG PID)%d Error %d while page encryption in callback!\n",
@@ -393,6 +393,7 @@ void pgcrypt_complete(struct crypto_async_request *req, int err)
 	kfree(res->pg_array);
 	skcipher_request_free(res->enc_req);
 	kfree(res);
+	return NULL;
 }
 
 static int pte_walk(pte_t *pte, unsigned long addr, unsigned long next, struct mm_walk *walk)
@@ -458,7 +459,7 @@ static int pte_walk(pte_t *pte, unsigned long addr, unsigned long next, struct m
 		if (PageSlab(page))
 			mapcount = 0;
 		else
-			mapcount = page_mapcount(page);
+			mapcount = atomic_read(&page->_mapcount);
 		// if mapcount is less than one then it is a special kernel/driver mapping
 		// no need to encrypt/decrypt
 		if (mapcount < 1) {
@@ -623,7 +624,8 @@ void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_pr
 					__func__, task->pid, vma_entry_tmp->vma_ref);
 				spin_lock(&task->mm->page_table_lock);
 				// mark the VMA writable
-				vma_entry_tmp->vma_ref->vm_flags |= VM_WRITE;
+				// vma_entry_tmp->vma_ref->vm_flags |= VM_WRITE;
+				vm_flags_set(vma_entry_tmp->vma_ref, VM_WRITE);
 				spin_unlock(&task->mm->page_table_lock);
 				// mark the VMA "was not writable"
 				vma_entry_tmp->was_not_writable = 1;
@@ -632,9 +634,11 @@ void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_pr
 			pr_debug("__refrigerator [%s] PID: %d, encrypt vma: %p\n",
 				__func__, task->pid, vma_entry_tmp->vma_ref);
 
-			down_read(&task->mm->mmap_sem);
+			// down_read(&task->mm->mmap_sem);
+			mmap_read_lock(task->mm);
 			walk_page_vma_ptr(vma_entry_tmp->vma_ref, &walk_ops, &page_walk_data);
-			up_read(&task->mm->mmap_sem);
+			mmap_read_unlock(task->mm);
+			// up_read(&task->mm->mmap_sem);
 
 			proc_total_enc_pgs += page_walk_data.proc_total_enc_pgs;
 
@@ -776,7 +780,8 @@ void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_pr
 			pr_debug("__refrigerator [%s] PID: %d make VMA %p write protected!\n",
 				__func__, task->pid, vma_entry_tmp->vma_ref);
 			spin_lock(&task->mm->page_table_lock);
-			vma_entry_tmp->vma_ref->vm_flags &= ~(VM_WRITE);
+			// vma_entry_tmp->vma_ref->vm_flags &= ~(VM_WRITE);
+			vm_flags_set(vma_entry_tmp->vma_ref, VM_WRITE);
 			spin_unlock(&task->mm->page_table_lock);
 			vma_entry_tmp->was_not_writable = 0;
 		}
@@ -816,7 +821,7 @@ bool __mk_pte_writable(struct task_struct *task, struct vm_area_struct *vma, pte
 	int changed = 0;
 
 	if(!pte_write(pte_val)) {
-		pte_val = pte_mkwrite(pte_val);
+		pte_val = pte_mkwrite(pte_val, vma);
 		// for ARM we make the PTE dirty, since ARM checks for access permissions based on this bit
 		pte_val = pte_mkdirty(pte_val);
 
@@ -958,7 +963,7 @@ int encrypt_processes(void)
 			printk("__refrigerator [%s] Allocated block cipher driver: %s\n",
 				__func__, crypto_tfm_alg_driver_name(crypto_skcipher_tfm(tfm)));
 			printk("__refrigerator [%s] Default block cipher key: %u, cipher minsize: %u, cipher maxsize: %u. Actual keysize: %u\n",
-				__func__, crypto_skcipher_default_keysize(tfm), crypto_skcipher_alg(tfm)->min_keysize, crypto_skcipher_alg(tfm)->max_keysize, key_len);
+				__func__, crypto_skcipher_max_keysize(tfm), crypto_skcipher_alg(tfm)->min_keysize, crypto_skcipher_alg(tfm)->max_keysize, key_len);
 			if (crypto_skcipher_setkey(tfm, encdec_key, key_len)) {
 				printk("__refrigerator [%s] Could not set block cipher key!\n",
 					__func__);
@@ -996,10 +1001,11 @@ int encrypt_processes(void)
 		t = p;
 
 		if (t->mm && frozen_count != atomic_read(&t->mm->mm_users)) {
-			struct vm_area_struct *cur_vma = t->mm->mmap;
+			struct vm_area_struct *cur_vma;
 			
 			//printk(KERN_INFO "Protecting process: %s\n", t->comm);
-			while(cur_vma != NULL) {
+			VMA_ITERATOR(iter, t->mm, 0);
+			for_each_vma(iter, cur_vma) {
 
 				struct mm_walk_ops walk_ops = {
 					.pte_entry = pte_walk_save_pages,
@@ -1008,7 +1014,6 @@ int encrypt_processes(void)
 
 				walk_page_vma_ptr(cur_vma, &walk_ops, NULL);
 				
-				cur_vma = cur_vma->vm_next;
 			}
 		}
 	}
