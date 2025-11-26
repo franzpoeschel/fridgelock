@@ -25,8 +25,8 @@
 #include <linux/kprobes.h>
 #include <linux/ptrace.h>
 
-#include "userspace_device.h"
-#include "mm_crypt.h"
+#include "../include/userspace_device.h"
+#include "../include/mm_crypt.h"
 
 #define DRIVER_LICENSE "GPL"
 #define DRIVER_AUTHOR  "Fabian Franzen <franzen@sec.in.tum.de>, Manuel Andreas <manuel.andreas@tum.de>, Manuel Huber <manuel.huber@aisec.fraunhofer.de>"
@@ -311,7 +311,7 @@ static int invalidate_inode_page_entry(struct kretprobe_instance *ri, struct pt_
 {
 	//TODO: This relies on x86-64
 	struct page *page = (struct page*) regs->di;
-	struct address_space *mapping = page_mapping(page);
+	struct address_space *mapping = page->mapping; // page_mapping(page);
 	*((void**)&ri->data) = page;
 	if (!mapping) {
 		//printk(KERN_INFO "[fridgelock] Skipping page without address_space\n");
@@ -449,7 +449,8 @@ static int suspend_device(const char* dev_path)
 	struct dm_target* target;
 	struct dm_table* table;
 	char* dummy_argv[] = {"key", "wipe"};
-	dev_t dev = dm_get_dev_t(dev_path);
+	dev_t dev;
+	dm_devt_from_path(dev_path, &dev);
 	struct mapped_device *md = dm_get_md(dev);
 
 	if (dm_suspend_ptr == NULL) {

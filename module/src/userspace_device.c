@@ -4,11 +4,13 @@
 #include <linux/sched/signal.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/wait.h>
 //#include <linux/sched.h>
-#include <unistd.h>
-#include <sys/stat.h>
+// #include <unistd.h>
+// #include <sys/stat.h>
+// #include <sys/types.h>
 
-#include "userspace_device.h"
+#include "../include/userspace_device.h"
 
 #define DRIVER_NAME "ramenc"
 #define BUF_SIZE 256
@@ -50,7 +52,7 @@ int userspace_device_init(void)
 	if (alloc_chrdev_region(&dev , 0, 1, DRIVER_NAME) < 0)
 		goto error;
 	//printk(KERN_INFO "[fridgelock] Allocated userspace character device: (Major/Minor) (%d/%d)", MAJOR(dev), MINOR(dev));
-	if ((class = class_create(THIS_MODULE, DRIVER_NAME)) == NULL)
+	if ((class = class_create(DRIVER_NAME)) == NULL)
 		goto error;
 	cdev_init(&cdev, &fops);
 	if (device_create(class, NULL, dev, NULL, DRIVER_NAME) == NULL)

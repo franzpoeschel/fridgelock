@@ -12,6 +12,7 @@
 #include <linux/spinlock.h>
 #include <linux/crypto.h>
 #include <linux/sched.h>
+#include <linux/pagewalk.h>
 #include <asm/tlbflush.h>
 #include <linux/mm.h>
 #include <linux/kallsyms.h>
@@ -20,7 +21,7 @@
 #include <linux/page-flags.h>
 #include <linux/list.h>
 
-#include "mm_crypt.h"
+#include "../include/mm_crypt.h"
 
 #ifdef CONFIG_RAMENC
 
@@ -227,7 +228,8 @@ enc_process_t* freezer_find_segments(struct task_struct *task, char mem_sections
 	current_proc->perf.num_enc_dec_pgs = 0;
 #endif
 
-	ref_mmap = task->mm->mmap;
+	ref_mmap = vm_area_alloc(task->mm);
+	// ref_mmap = task->mm->mmap;
 	while(ref_mmap != NULL) {
 
 #ifdef CONFIG_RAMENC_DEBUG
