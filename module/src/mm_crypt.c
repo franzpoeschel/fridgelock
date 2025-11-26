@@ -20,6 +20,7 @@
 #include <linux/crypto.h>
 #include <linux/page-flags.h>
 #include <linux/list.h>
+#include <linux/pagewalk.h>
 
 #include "../include/mm_crypt.h"
 
@@ -78,7 +79,7 @@ static struct vm_area_struct *(*vma_interval_tree_iter_first_ptr)(struct rb_root
 static struct vm_area_struct *(*vma_interval_tree_iter_next_ptr)(struct vm_area_struct *node,
 				unsigned long start, unsigned long last);
 
-static int (*walk_page_vma_ptr)(struct vm_area_struct *vma, struct mm_walk *walk) = NULL;
+static int (*walk_page_vma_ptr)(struct vm_area_struct *vma, struct mm_walk_ops *walk, void *private) = NULL;
 
 #define RET_IF_NULL(arg) do {if((arg) == NULL) return -1;} while(0);
 #define RESOLVE(name) do {if((name##_ptr = (void*) kallsyms_lookup_name(#name)) == NULL){ printk(KERN_ERR "Failed to resolve:" #name "\n"); return -1;}} while(0);
@@ -606,11 +607,9 @@ void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_pr
 				.proc_total_enc_pgs = 0
 			};
 
-			struct mm_walk walker = {
+			struct mm_walk_ops walk_ops = {
 				.pte_entry = pte_walk,
-				.hugetlb_entry = hugetlb_walk,
-				.mm = task->mm,
-				.private = &page_walk_data
+				.hugetlb_entry = hugetlb_walk
 			};
 
 #ifdef CONFIG_RAMENC_PERF_PROFILING
@@ -633,7 +632,7 @@ void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_pr
 				__func__, task->pid, vma_entry_tmp->vma_ref);
 
 			down_read(&task->mm->mmap_sem);
-			walk_page_vma_ptr(vma_entry_tmp->vma_ref, &walker);
+			walk_page_vma_ptr(vma_entry_tmp->vma_ref, &walk_ops, &page_walk_data);
 			up_read(&task->mm->mmap_sem);
 
 			proc_total_enc_pgs += page_walk_data.proc_total_enc_pgs;
@@ -949,7 +948,7 @@ int encrypt_processes(void)
 
 	/* Allocate the skcipher */
 	if (!tfm) {
-		tfm = crypto_alloc_skcipher(CRYPT_ALG, CRYPTO_ALG_TYPE_ABLKCIPHER, 0);
+		tfm = crypto_alloc_skcipher(CRYPT_ALG, 0, CRYPTO_ALG_ASYNC);
 		if(IS_ERR(tfm)) {
 			printk("__refrigerator [%s] Could not allocate block cipher: %s\n",
 				__func__, CRYPT_ALG);
@@ -957,6 +956,8 @@ int encrypt_processes(void)
 		} else {
 			printk("__refrigerator [%s] Allocated block cipher driver: %s\n",
 				__func__, crypto_tfm_alg_driver_name(crypto_skcipher_tfm(tfm)));
+			printk("__refrigerator [%s] Default block cipher key: %u, cipher minsize: %u, cipher maxsize: %u. Actual keysize: %u\n",
+				__func__, crypto_skcipher_default_keysize(tfm), crypto_skcipher_alg(tfm)->min_keysize, crypto_skcipher_alg(tfm)->max_keysize, key_len);
 			if (crypto_skcipher_setkey(tfm, encdec_key, key_len)) {
 				printk("__refrigerator [%s] Could not set block cipher key!\n",
 					__func__);
@@ -999,14 +1000,12 @@ int encrypt_processes(void)
 			//printk(KERN_INFO "Protecting process: %s\n", t->comm);
 			while(cur_vma != NULL) {
 
-				struct mm_walk walker = {
+				struct mm_walk_ops walk_ops = {
 					.pte_entry = pte_walk_save_pages,
-					.hugetlb_entry = hugetlb_walk,
-					.mm = t->mm,
-					.private = NULL
+					.hugetlb_entry = hugetlb_walk
 				};
 
-				walk_page_vma_ptr(cur_vma, &walker);
+				walk_page_vma_ptr(cur_vma, &walk_ops, NULL);
 				
 				cur_vma = cur_vma->vm_next;
 			}
@@ -1110,7 +1109,7 @@ int decrypt_processes(void)
 
 	/* Allocate the skcipher */
 	if (!tfm) {
-		tfm = crypto_alloc_skcipher(CRYPT_ALG, CRYPTO_ALG_TYPE_ABLKCIPHER, 0);
+		tfm = crypto_alloc_skcipher(CRYPT_ALG, 0, CRYPTO_ALG_ASYNC);
 		if(IS_ERR(tfm)) {
 			printk("__refrigerator [%s] Could not allocate block cipher: %s\n",
 				__func__, CRYPT_ALG);
