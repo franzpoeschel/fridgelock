@@ -229,6 +229,8 @@ enc_process_t* freezer_find_segments(struct task_struct *task, char mem_sections
 	current_proc->perf.num_enc_dec_pgs = 0;
 #endif
 
+	// TODO wahrscheinlich gehört hier eher vma_init() aus mm.h hin
+	// oder was mit iteratoren
 	ref_mmap = vm_area_alloc(task->mm);
 	// ref_mmap = task->mm->mmap;
 	while(ref_mmap != NULL) {
@@ -356,6 +358,8 @@ enc_process_t* freezer_find_segments(struct task_struct *task, char mem_sections
 		}
 next_iter:
 		// goto next node in the vma list
+		// vma_next() aus mm.h wahrscheinlich, aber braucht nen vma_iterator
+		// wahrscheinlich also hier drin die iterationslogik umschreiben
 		ref_mmap = ref_mmap->vm_next;
 		tot_segments++;
 	}
