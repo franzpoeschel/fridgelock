@@ -377,12 +377,13 @@ struct pgcrypt_result {
 	long long unsigned int *iv_string;
 };
 
-void *pgcrypt_complete(struct crypto_async_request *req, int err)
+void pgcrypt_complete(void *req_in, int err)
 {
+	struct crypto_async_request * req = (struct crypto_async_request *) req_in;
 	struct pgcrypt_result *res = req->data;
 	if (err == -EINPROGRESS) {
 		complete(res->async_barrier);
-		return NULL;
+		return;
 	}
 	else if (err != 0) {
 		printk("__refrigerator [%s] PID: (THIS IS THE WRONG PID)%d Error %d while page encryption in callback!\n",
@@ -393,7 +394,6 @@ void *pgcrypt_complete(struct crypto_async_request *req, int err)
 	kfree(res->pg_array);
 	skcipher_request_free(res->enc_req);
 	kfree(res);
-	return NULL;
 }
 
 static int pte_walk(pte_t *pte, unsigned long addr, unsigned long next, struct mm_walk *walk)

@@ -170,7 +170,7 @@ void print_pte(struct task_struct *task, pte_t *pte, struct vm_area_struct *vma,
 #endif
 
 enc_process_t* freezer_find_segments(struct task_struct *task, char mem_sections);
-void *pgcrypt_complete(struct crypto_async_request *req, int err);
+void pgcrypt_complete(void *req_in, int err);
 void freezer_secure_vm_areas(struct task_struct *task, enc_process_t *current_proc, bool enc_dec, void *crypt_tfm);
 
 #endif /* _LINUX_MM_CRYPT_H  */
