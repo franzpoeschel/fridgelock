@@ -15,16 +15,23 @@
 #include <linux/pagewalk.h>
 #include <asm/tlbflush.h>
 #include <linux/mm.h>
-#include <linux/kallsyms.h>
+// #include <linux/kallsyms.h>
 #include <crypto/skcipher.h>
 #include <linux/crypto.h>
 #include <linux/page-flags.h>
 #include <linux/list.h>
 #include <linux/pagewalk.h>
-
+#include <linux/kprobes.h>
 #include "../include/mm_crypt.h"
 
 #ifdef CONFIG_RAMENC
+
+// ref. https://github.com/xcellerator/linux_kernel_hacking/issues/3#issuecomment-757994563
+static struct kprobe kp = {
+    .symbol_name = "kallsyms_lookup_name"
+};
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+kallsyms_lookup_name_t kallsyms_lookup_name_workaround;
 
 struct enc_args {
 	enc_process_t *current_proc;
@@ -82,10 +89,15 @@ static struct vm_area_struct *(*vma_interval_tree_iter_next_ptr)(struct vm_area_
 static int (*walk_page_vma_ptr)(struct vm_area_struct *vma, struct mm_walk_ops *walk, void *private) = NULL;
 
 #define RET_IF_NULL(arg) do {if((arg) == NULL) return -1;} while(0);
-#define RESOLVE(name) do {if((name##_ptr = (void*) kallsyms_lookup_name(#name)) == NULL){ printk(KERN_ERR "Failed to resolve:" #name "\n"); return -1;}} while(0);
+#define RESOLVE(name) do {if((name##_ptr = (void*) kallsyms_lookup_name_workaround(#name)) == NULL){ printk(KERN_ERR "Failed to resolve:" #name "\n"); return -1;}} while(0);
 
 int resolve_functions(void)
 {
+	// ref. https://github.com/xcellerator/linux_kernel_hacking/issues/3#issuecomment-757994563
+  register_kprobe(&kp);
+  kallsyms_lookup_name_workaround = (kallsyms_lookup_name_t) kp.addr;
+  unregister_kprobe(&kp);
+	
 	RESOLVE(arch_vma_name);
 	RESOLVE(ptep_set_access_flags);
 	RESOLVE(vma_is_stack_for_current);
@@ -821,7 +833,10 @@ bool __mk_pte_writable(struct task_struct *task, struct vm_area_struct *vma, pte
 	int changed = 0;
 
 	if(!pte_write(pte_val)) {
-		pte_val = pte_mkwrite(pte_val, vma);
+		// Aber wir haben ne vma?
+		// pte_mkwrite(pte_val, vma) kompiliert, linkt aber ned..
+		// werden schon wissen was se machen
+		pte_val = pte_mkwrite_novma(pte_val);
 		// for ARM we make the PTE dirty, since ARM checks for access permissions based on this bit
 		pte_val = pte_mkdirty(pte_val);
 
